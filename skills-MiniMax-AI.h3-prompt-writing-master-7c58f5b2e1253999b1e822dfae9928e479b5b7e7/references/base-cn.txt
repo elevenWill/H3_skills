@@ -1,0 +1,222 @@
+# 视频提示词编写指南（T2VA / I2VA / FL2VA / L2VA）
+
+## 1. 任务概览
+
+- **T2VA**：从文本直接生成完整的视听时间线。
+- **I2VA**：在 T2VA 基础上，加入第一帧指令，并提供从第一帧向前展开的画面路径。
+- **FL2VA**：在 T2VA 基础上，加入首尾帧指令，并提供从第一帧到最后一帧的连续路径。
+- **L2VA**：在 T2VA 基础上，加入末尾帧指令，并提供从合理前序状态收束到末帧的路径。
+
+## 2. 最终提示词结构
+
+### 2.1 第一部分：指令语句
+
+**T2VA** 没有图像对齐指令，直接从三个核心字段开始。
+
+**I2VA** 固定使用：
+
+```text
+For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.
+```
+
+**FL2VA** 固定使用：
+
+```text
+How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the 0.00-second mark of the target video; Picture 2 (from Shot N) aligns with the S.SS-second mark of the target video.
+```
+
+**L2VA** 固定使用：
+
+```text
+How the reference pictures align with the target video — <Picture 1> (from [Shot N]) aligns with the S.SS-second mark of the target video.
+```
+
+其中，`N` 表示实际最后一镜头的编号，`S.SS` 是按两位小数格式化后的有效视频时长。该指令必须是最终提示词的第一行，核心字段前保留一个空行。
+
+### 2.2 第二部分：三个核心字段
+
+```text
+integrated_multimodal_description: [Shot 1] ...
+
+overall_soundscape: ...
+
+non_diegetic_music: ...
+```
+
+- **integrated_multimodal_description**：描述画面、动作、镜头、发言人、对话、唱歌及视频时间线中的内在音效（即剧情内音）。
+- **overall_soundscape**：概述全视频中的环境声、动作声和非言语人声。
+- **non_diegetic_music**：描述角色听不见、仅观众可听见的背景音乐。
+
+## 3. 如何在多模态描述中融入关键帧
+
+### 3.1 I2VA：从首图出发并向前展开
+
+`<Picture 1>` 是目标视频 0.00 秒的实际首帧，属于 `[Shot 1]`。描述应先建立图中风格、主体、构图与场景锚点，再叙述后续动作。角色身份、服饰、颜色、关键道具和空间关系要保持一致。
+
+建议结构：**第一帧锚点 → 动作起始 → 持续展开 → 结果或反应**。
+
+### 3.2 FL2VA：描述首尾帧之间的路径
+
+Picture 1 为开头，Picture 2 为结尾。重点写清主体如何运动、姿态如何变化、物体如何被操作、构图如何演化，以及场景/光照如何过渡。
+
+FL2VA 通常偏向单镜头，以便模型可在首尾帧间连续插值。仅在用户明确要求时使用多镜头。最后一帧必须在视频结尾由最终 `[Shot N]` 达到。
+
+建议结构：**首帧状态 → 可见中间变化 → 差异逐步缩小 → 末帧状态**。
+
+### 3.3 L2VA：推断开头并在末尾落点到图
+
+`<Picture 1>` 是视频的最终帧，属于最后的 `[Shot N]`，并不天然属于 Shot 1。先从用户意图和末帧推断合理的前序状态，再说明角色、道具、镜头与场景如何逐步逼近参考图。
+
+建议结构：**合理前序状态 → 明确动作与过渡路径 → 最后镜头中的逐步逼近 → 末帧落点**。
+
+## 4. 三个共享核心部分的写法
+
+### 4.1 按时间线展开多模态描述
+
+`integrated_multimodal_description` 是改写提示词的主体。每个细节都应对应可见或可闻内容：视觉风格、初始构图、主体外观与位置、场景与关键道具、动作与反应、镜头变换、说话语言和同步的内在声音。
+
+在 `[Shot 1]` 开始时，先声明整体风格和初始构图。常见风格包括 `Cinematic`、`live-action`、`2D-animated`、`3D CG`、`claymation`、`watercolor` 和 `vintage film`。关键帧任务从参考图提取风格；T2VA 则从用户文本选择风格。
+
+```text
+[Shot 1] Live-action, cinematic, a medium-wide shot frames...
+```
+
+### 4.2 镜头与剪辑
+
+不要给第一镜头添加时间戳。后续镜头使用递增的镜头编号，并且每镜头开头使用严格递增且落在视频时长内的剪辑时间：
+
+```text
+[Shot 2] At 00:03.500, the camera cuts to...
+```
+
+普通剪辑可使用 `the camera cuts to`、`the shot cuts to`、`the shot transitions to`、`the shot changes to` 或 `the shot switches to`。用户明确要求时，也可使用交叉溶解、淡入淡出或擦除。一次剪辑应引入主体、空间、状态、视角或时间的新信息；如果仅需距离微调或轻微角度变化，应优先使用镜头运动。
+
+### 4.3 摄影机运动：运动类型 + 幅度 + 速度
+
+完整的摄影机运动表达包含三个维度：**运动类型**决定摄像机如何运动，**幅度**决定构图变化范围，**速度**决定变化节奏。只有在有意义时才补充幅度和速度；中等幅度与普通速度通常省略。
+
+| 维度 | 可用表达 | 说明 |
+|-|-|-|
+| 运动类型 | `Zoom In / Zoom Out` | 镜头机位不动，仅焦段变化 |
+| 运动类型 | `Push In / Pull Out` | 镜头向前 / 向后移动 |
+| 运动类型 | `Pan Left / Pan Right` | 镜头固定，镜头头部水平摆动 |
+| 运动类型 | `Truck Left / Truck Right` | 镜头主体平移 |
+| 运动类型 | `Tilt Up / Tilt Down` | 镜头固定，镜头头部垂直摆动 |
+| 运动类型 | `Pedestal Up / Pedestal Down` | 整机上下移动 |
+| 运动类型 | `Arc Shot` | 围绕主体做弧形移动 |
+| 运动类型 | `Tracking Shot` | 跟随运动中的主体 |
+| 运动类型 | `Static Shot` | 镜头位置与焦点保持不变 |
+| 运动类型 | `Shake Slightly / Shake Strongly` | 轻微/强烈抖动 |
+| 运动类型 | `POV` | 主观视角 |
+| 运动类型 | `Roll Clockwise / Roll Counterclockwise` | 镜头绕镜头轴顺/逆时针滚转 |
+| 幅度 | `with small amplitude` | 小范围变化 |
+| 幅度 | `with large amplitude` | 大范围变化 |
+| 速度 | `at slow speed` | 慢速运动 |
+| 速度 | `at fast speed` | 快速运动 |
+
+摄影机运动应写成镜头内自然英文动作，而非句尾简单堆叠标签。
+
+```text
+The camera pushes in with small amplitude at slow speed toward the folded letter in her hands.
+The camera pans right with large amplitude at fast speed, revealing the open doorway.
+The camera holds a static shot as the runner exits the frame.
+```
+
+### 4.4 发声者、对话与唱歌
+
+说话、唱歌或离场人声使用稳定 ID，如 `(S1)`、`(S2)`。当多个已编号发声者同时说话或合唱时，使用复合 ID，例如 `(S1,S2)`。同一说话者在各镜头中保持同一 ID；从未发声的角色不带发声 ID。
+
+说话者首次出现时，应基于视觉与音频信息给出足够稳定身份信息，例如角色类型、年龄、性别、是否在画面中、音高、音色、语速或口音。将识别短语、ID、动作与表达放在 `<d>` 外；`<d>` 内只保留语言标签和用户原始给定的实际台词文本。必须逐字逐标点保留原文，不要翻译或改写。
+
+```text
+The young woman with a quiet, breathy voice (S1) says: <d>[English] I get off at the next station.</d>
+The two children (S1,S2) shout together, <d>[English] Wait for us!</d>
+```
+
+对于画外配音，使用完整短语 `says in an off-screen voiceover`。每个配音 `<d>` 块后，立即说明对应在屏角色的嘴是闭合的：
+
+```text
+The man (S1) says in an off-screen voiceover: <d>[English] I still remember that road.</d> while his lips remain completely closed.
+```
+
+当同一句台词或歌词跨镜头时，在连接点两侧都加 `<scenetrans>`，并明确写音频在剪辑处持续；当语音被视频结尾截断时使用 `<cutoff>`。可选连续性表达包括 `continues seamlessly across the cut`、`continues uninterrupted into the next shot`、`carries over from the previous shot`、或 `remains audible across the transition`。
+
+### 4.5 画面内文本
+
+将画面中实际可见的横幅、标牌、标签、字幕或霓虹字都写在英文双引号中。原始文本和标点要逐字保留，不要翻译。
+
+```text
+A red neon sign reading "营业中" glows above the doorway.
+```
+
+### 4.6 overall_soundscape
+
+使用 1–4 句英文连续段落概括全片的环境声、动作声与非言语人类声音，如风、雨、交通、脚步、布料摩擦、撞击、呼吸、笑声或喘息。对话、唱歌与 diegetic 音乐已归入多模态描述，不应在此重复。只有当用户明确要求全片静音时才写 `N/A`。
+
+```text
+overall_soundscape: Steady rain taps against the café windows while low room ambience continues underneath. The entrance bell rings once, followed by wet footsteps and the soft scrape of a chair.
+```
+
+### 4.7 non_diegetic_music
+
+用 1–3 句英文描述观众可听见但角色听不见的背景音乐。重点写乐器、速度、节奏和动态变化，不要用抽象情绪词，也不要解释配乐的情绪功能。唱歌、乐器、广播、电视或手机里角色能听见的音乐应归入 diegetic 事件并写入多模态描述。无非 diegetic 音乐时写 `N/A`。
+
+```text
+non_diegetic_music: Sparse piano notes at a slow tempo, joined by sustained low strings that gradually increase in volume before fading out.
+```
+
+## 5. 示例
+
+### 示例 1：T2VA
+
+无参考图时，直接基于文本构建完整时间线。可补充与用户意图一致的场景、角色、动作和音效细节。
+
+```text
+integrated_multimodal_description: [Shot 1] Live-action, cinematic, a medium-wide shot frames a baker opening the shutters of a small street bakery before sunrise. The camera pushes in with small amplitude at slow speed as the middle-aged baker with a calm, slightly raspy voice (S1) places a fresh loaf on the wooden counter and says: <d>[English] First batch of the morning.</d> [Shot 2] At 00:05.000, the camera cuts to a close-up of steam rising from the sliced bread while the baker's final words carry over from the previous shot.
+
+overall_soundscape: Wooden shutters scrape open over a quiet street as trays clink softly inside the bakery. The doorbell rings once, followed by light footsteps and the crisp sound of bread being sliced.
+
+non_diegetic_music: A soft acoustic-guitar pattern at a moderate tempo, joined by sparse upright-bass notes and a gentle fade at the end.
+```
+
+### 示例 2：I2VA
+
+先写首帧指令，再将 Picture 1 的主体、构图与场景作为 Shot 1 的起点，再描述后续发展。
+
+```text
+For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.
+
+integrated_multimodal_description: [Shot 1] Live-action, cinematic, the young woman shown in <Picture 1> remains beside the rain-covered train window, preserving her appearance, clothing, seat position, and the carriage layout. The camera trucks right with small amplitude at slow speed as she lifts her gaze from the folded letter toward the passing city lights. Her reflection moves across the glass while the quiet, breathy young woman (S1) says: <d>[English] I get off at the next station.</d> She folds the letter along its existing crease.
+
+overall_soundscape: The train wheels produce a steady metallic rhythm beneath a low ventilation hum. Rain ticks against the window while paper rustles softly in her hands.
+
+non_diegetic_music: Sustained cello notes at a slow tempo with widely spaced piano tones, gradually decreasing in volume.
+```
+
+### 示例 3：FL2VA
+
+两张图分别锚定开头和结尾。正文不应重复两段静态图像描写，而应提供连接它们的运动路径。以下为 8 秒单镜头示例。
+
+```text
+How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the 0.00-second mark of the target video; Picture 2 (from Shot 1) aligns with the 8.00-second mark of the target video.
+
+integrated_multimodal_description: [Shot 1] Live-action, cinematic, a rain-soaked cyclist begins in the position and framing established by Picture 1, holding a closed black umbrella beside a silver bicycle. The camera pulls out with small amplitude at slow speed as she releases the bicycle handle, raises the umbrella above her shoulder, and presses the runner upward until the canopy opens. Water rolls from the expanding fabric while she steps beneath it, rotates the handle into the final angle, and settles into the pose, spacing, and composition established by Picture 2 at the end of the shot.
+
+overall_soundscape: Rain falls steadily on the pavement, followed by the metallic click of the umbrella runner and the soft snap of the canopy opening. Water drips from the bicycle frame as distant traffic passes.
+
+non_diegetic_music: N/A
+```
+
+### 示例 4：L2VA
+
+图像仅锚定最终瞬间。先建立合理前序状态，再通过动作、物体状态和构图逐步在最后镜头逼近 Picture 1。以下为 6 秒单镜头示例。
+
+```text
+How the reference pictures align with the target video — <Picture 1> (from [Shot 1]) aligns with the 6.00-second mark of the target video.
+
+integrated_multimodal_description: [Shot 1] Live-action, cinematic, a close shot begins with an intact drinking glass near the edge of a dark wooden table, while the same hand and sleeve visible in <Picture 1> approach from the right. The camera pushes in with small amplitude at slow speed as the fingertips strike the rim. The glass tips, falls, and hits the floor with a sharp impact; cracks spread through it as fragments slide outward. Toward the end, the moving pieces lose momentum and settle into the exact broken arrangement, hand position, camera angle, lighting, and final composition established by <Picture 1>.
+
+overall_soundscape: Fingertips tap the glass before it scrapes across the tabletop, falls, and breaks with a sharp crash. Small fragments scatter and gradually stop sliding across the floor.
+
+non_diegetic_music: A low electronic pulse at a slow tempo, ending immediately after the glass breaks.
+```
